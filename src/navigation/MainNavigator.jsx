@@ -3,6 +3,7 @@ import HomeScreen from "../screens/user/HomeScreen";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import FavoritesScreen from "../screens/user/FavoritesScreen";
 import ProfileScreen from "../screens/user/ProfileScreen";
+import CreateUser from "../screens/user/CreateUser";
 import { House, Heart, Settings } from "lucide-react-native";
 import SettingScreen from "../screens/user/SettingScreen";
 import { useTheme } from "react-native-paper";
@@ -35,6 +36,7 @@ const STACK_SCREENS = {
   Home: [
     { name: "Home", component: HomeScreen },
     { name: "Profile", component: ProfileScreen },
+    { name: "Create User", component: CreateUser },
   ],
   Favorites: [
     { name: "Favorites", component: FavoritesScreen },

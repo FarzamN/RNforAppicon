@@ -1,26 +1,51 @@
-import React, { useRef, useState } from "react";
 import {
   View,
-  StyleSheet,
   Animated,
-  KeyboardAvoidingView,
   Platform,
+  StyleSheet,
   TouchableOpacity,
+  KeyboardAvoidingView,
 } from "react-native";
-import { TextInput, Button, Text, useTheme } from "react-native-paper";
-import { useDispatch, useSelector } from "react-redux";
-import { login } from "../../store/slices/authSlice";
+import { useDispatch } from "react-redux";
+import { useForm } from "@tanstack/react-form";
+import React, { useRef, useState } from "react";
+import { loginApi } from "../../services/auth.api";
+import { useMutation } from "@tanstack/react-query";
 import { Circle, CheckCircle } from "lucide-react-native";
+import { Button, Text, useTheme } from "react-native-paper";
+import { loginSuccess } from "../../store/slices/authSlice";
+import { FormTextInput, ValidationText } from "../../components";
 
 export default function LoginScreen() {
   const dispatch = useDispatch();
-  const { loading, error: authError } = useSelector((state) => state.auth);
   const paperTheme = useTheme();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const {
+    mutate: loginUser,
+    isPending,
+    isError,
+    error,
+  } = useMutation({
+    mutationFn: loginApi,
+    onSuccess: (data) => {
+      dispatch(loginSuccess(data));
+    },
+    onError: () => {
+      shakeError();
+    },
+  });
+
+  const { handleSubmit, Field } = useForm({
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+    onSubmit: ({ value }) => {
+      loginUser(value);
+    },
+  });
+
   const [remember, setRemember] = useState(true);
-  const [error, setError] = useState("");
 
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
@@ -42,30 +67,6 @@ export default function LoginScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  };
-
-  const handleLogin = () => {
-    setError("");
-
-    if (!email || !password) {
-      setError("All fields are required");
-      shakeError();
-      return;
-    }
-
-    if (!email.includes("@")) {
-      setError("Invalid email address");
-      shakeError();
-      return;
-    }
-
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
-      shakeError();
-      return;
-    }
-
-    dispatch(login({ email, password }));
   };
 
   return (
@@ -92,31 +93,56 @@ export default function LoginScreen() {
           Welcome Back
         </Text>
 
-        <TextInput
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          style={styles.input}
-          theme={{ colors: { primary: paperTheme.colors.primary } }}
-          textColor={paperTheme.colors.onSurface}
-          outlineColor={paperTheme.colors.outline}
-          activeOutlineColor={paperTheme.colors.primary}
-        />
+        <Field
+          name="email"
+          validators={{
+            onChange: ({ value }) => {
+              if (!value) return "Email is required";
+              const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
+              return emailRegex.test(value) ? null : "Email is not valid";
+            },
+          }}
+        >
+          {(field) => (
+            <FormTextInput
+              field={field}
+              label="Email"
+              keyboardType="email-address"
+            />
+          )}
+        </Field>
 
-        <TextInput
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-          theme={{ colors: { primary: paperTheme.colors.primary } }}
-          textColor={paperTheme.colors.onSurface}
-          outlineColor={paperTheme.colors.outline}
-          activeOutlineColor={paperTheme.colors.primary}
-        />
+        <Field
+          name="password"
+          validators={{
+            onChange: ({ value }) => {
+              if (!value) return "Password is required";
+              return value.length >= 8
+                ? null
+                : "Password must be at least 8 characters";
+            },
+          }}
+        >
+          {(field) => (
+            <FormTextInput field={field} label="Password" secureTextEntry />
+          )}
+        </Field>
 
+        <ValidationText message={error?.message} isError={isError} />
+
+        {/* {isError && (
+          <Animated.Text
+            style={[
+              styles.error,
+              {
+                color: paperTheme.colors.error,
+                transform: [{ translateX: shakeAnim }],
+              },
+            ]}
+          >
+            {error.message}
+          </Animated.Text>
+        )} */}
         <TouchableOpacity
           onPress={() => setRemember(!remember)}
           style={styles.rememberRow}
@@ -136,33 +162,18 @@ export default function LoginScreen() {
           </Text>
         </TouchableOpacity>
 
-        {error ? (
-          <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-            <Text style={[styles.error, { color: paperTheme.colors.error }]}>
-              {error}
-            </Text>
-          </Animated.View>
-        ) : null}
-
-        {authError ? (
-          <Text style={[styles.error, { color: paperTheme.colors.error }]}>
-            {authError}
-          </Text>
-        ) : null}
-
         <Button
           mode="contained"
-          loading={loading}
-          disabled={loading}
-          onPress={handleLogin}
+          loading={isPending}
+          disabled={isPending}
           style={styles.button}
+          onPress={() => handleSubmit()}
           buttonColor={paperTheme.colors.primary}
           textColor={paperTheme.colors.onPrimary}
         >
           Login
         </Button>
 
-        {/* Optional: Sign up link */}
         <View style={styles.footer}>
           <Text style={{ color: paperTheme.colors.onSurfaceVariant }}>
             Don't have an account?{" "}
@@ -199,9 +210,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     fontWeight: "bold",
   },
-  input: {
-    marginBottom: 16,
-    backgroundColor: "transparent",
+  error: {
+    marginTop: 4,
+    fontSize: 12,
   },
   rememberRow: {
     flexDirection: "row",
@@ -212,12 +223,6 @@ const styles = StyleSheet.create({
   rememberText: {
     marginLeft: 8,
     fontSize: 14,
-  },
-  error: {
-    marginBottom: 12,
-    textAlign: "center",
-    fontSize: 14,
-    fontWeight: "500",
   },
   button: {
     marginTop: 8,

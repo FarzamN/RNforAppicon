@@ -4,11 +4,15 @@ import { useSelector } from "react-redux";
 import { Text, useTheme } from "react-native-paper";
 import { Heart } from "lucide-react-native";
 import UserCard from "../../components/Cards/UserCard";
+import { useQueryClient } from "@tanstack/react-query";
+import { UserLayout } from "../../components";
 
 export default function FavoritesScreen({ navigation }) {
-  const favoriteIds = useSelector((state) => state.favorites.ids);
-  const users = useSelector((state) => state.users.list);
   const paperTheme = useTheme();
+  const favoriteIds = useSelector((state) => state.favorites.ids);
+  const queryClient = useQueryClient();
+
+  const users = queryClient.getQueryData(["users"])?.pages.flat() ?? [];
 
   const favorites = users.filter((user) => favoriteIds.includes(user.id));
 
@@ -45,12 +49,7 @@ export default function FavoritesScreen({ navigation }) {
   }
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: paperTheme.colors.background },
-      ]}
-    >
+    <UserLayout>
       <FlatList
         data={favorites}
         keyExtractor={(item) => item.id.toString()}
@@ -74,7 +73,7 @@ export default function FavoritesScreen({ navigation }) {
           </View>
         }
       />
-    </View>
+    </UserLayout>
   );
 }
 

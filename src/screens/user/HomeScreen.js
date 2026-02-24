@@ -1,50 +1,73 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { View, FlatList, StyleSheet, RefreshControl } from "react-native";
 import { Text, Button, useTheme, Searchbar } from "react-native-paper";
-import { useDispatch, useSelector } from "react-redux";
-import { fetchUsers } from "../../store/slices/usersSlice";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import UserCard from "../../components/Cards/UserCard";
 import SkeletonCard from "../../components/Skeleton/SkeletonCard";
-import { Search, X } from "lucide-react-native";
+import { Plus, Search, X } from "lucide-react-native";
+import { fetchUsersApi } from "../../services/user.api";
+import { UserLayout } from "../../components";
+import { AnimatedFAB } from "react-native-paper";
 
 export default function HomeScreen({ navigation }) {
-  const dispatch = useDispatch();
-  const { list, loading, error } = useSelector((state) => state.users);
   const paperTheme = useTheme();
-
+  const [isExtended, setIsExtended] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filteredUsers, setFilteredUsers] = useState([]);
 
-  useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredUsers(list);
-    } else {
-      const query = searchQuery.toLowerCase().trim();
-      const filtered = list.filter(
-        (user) =>
-          user.name.toLowerCase().includes(query) ||
-          user.email.toLowerCase().includes(query) ||
-          (user.username && user.username.toLowerCase().includes(query)),
-      );
-      setFilteredUsers(filtered);
-    }
-  }, [searchQuery, list]);
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+    refetch,
+    isFetching,
+    isError,
+    error,
+  } = useInfiniteQuery({
+    queryKey: ["users"],
+    queryFn: fetchUsersApi,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === 2 ? allPages.length + 1 : undefined;
+    },
+  });
+
+  const users = data?.pages.flat() ?? [];
+
+  const filteredUsers = useMemo(() => {
+    if (!searchQuery.trim()) return users;
+
+    const query = searchQuery.toLowerCase().trim();
+
+    return users.filter(
+      (user) =>
+        user.name.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query) ||
+        (user.username && user.username.toLowerCase().includes(query)),
+    );
+  }, [users, searchQuery]);
 
   const resultsCount = useMemo(() => filteredUsers.length, [filteredUsers]);
-
-  useEffect(() => {
-    dispatch(fetchUsers());
-  }, []);
-
-  const onRefresh = () => {
-    dispatch(fetchUsers());
-  };
 
   const clearSearch = () => {
     setSearchQuery("");
   };
 
-  if (loading && list.length === 0) {
+  // Handle scroll to control FAB extension
+  const handleScroll = ({ nativeEvent }) => {
+    const currentScrollPosition =
+      Math.floor(nativeEvent?.contentOffset?.y) ?? 0;
+
+    // Check if we're at the top
+    if (currentScrollPosition <= 0) {
+      setIsExtended(true);
+    } else {
+      setIsExtended(false);
+    }
+  };
+
+  if (isLoading && users.length === 0) {
     return (
       <View
         style={[
@@ -63,7 +86,7 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  if (error) {
+  if (isError) {
     return (
       <View
         style={[
@@ -75,12 +98,12 @@ export default function HomeScreen({ navigation }) {
         ]}
       >
         <Text style={{ color: paperTheme.colors.error, marginBottom: 16 }}>
-          {error}
+          {error?.message}
         </Text>
         <Button
           textColor={paperTheme.colors.onPrimary}
           mode="contained"
-          onPress={() => dispatch(fetchUsers())}
+          onPress={refetch}
         >
           Retry
         </Button>
@@ -89,26 +112,19 @@ export default function HomeScreen({ navigation }) {
   }
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: paperTheme.colors.background },
-      ]}
-    >
+    <UserLayout>
       <View style={styles.searchContainer}>
         <Searchbar
           placeholder="Search users by name or email..."
           onChangeText={setSearchQuery}
           value={searchQuery}
           icon={() => <Search size={20} color={paperTheme.colors.primary} />}
-          style={[styles.searchBar, {}]}
+          style={styles.searchBar}
           inputStyle={{ color: paperTheme.colors.onSurface }}
           iconColor={paperTheme.colors.primary}
           placeholderTextColor={paperTheme.colors.onSurfaceDisabled}
           clearIcon={() =>
-            searchQuery ? (
-              <X size={20} color={paperTheme.colors.primary} />
-            ) : null
+            searchQuery && <X size={20} color={paperTheme.colors.primary} />
           }
           onClearIconPress={clearSearch}
           traileringIcon={searchQuery ? "close" : undefined}
@@ -130,9 +146,10 @@ export default function HomeScreen({ navigation }) {
       <FlatList
         data={filteredUsers}
         keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <UserCard
             user={item}
+            index={index}
             onPress={() => navigation.navigate("Profile", { user: item })}
           />
         )}
@@ -141,8 +158,8 @@ export default function HomeScreen({ navigation }) {
             tintColor={paperTheme.colors.primary}
             colors={[paperTheme.colors.primary]}
             progressBackgroundColor={paperTheme.colors.surface}
-            refreshing={loading}
-            onRefresh={onRefresh}
+            refreshing={isFetching}
+            onRefresh={refetch}
           />
         }
         ListEmptyComponent={
@@ -168,15 +185,45 @@ export default function HomeScreen({ navigation }) {
           ) : null
         }
         contentContainerStyle={styles.listContent}
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <SkeletonCard />
+          ) : (
+            <View style={{ height: 60 }} />
+          )
+        }
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       />
-    </View>
+      <AnimatedFAB
+        icon={() => <Plus size={24} color={paperTheme.colors.onPrimary} />}
+        label="Add User"
+        extended={isExtended}
+        onPress={() => navigation.navigate("Create User")}
+        visible={true}
+        animateFrom="right"
+        iconMode="dynamic"
+        style={[
+          styles.fabStyle,
+          {
+            backgroundColor: paperTheme.colors.primary,
+          },
+        ]}
+        color={paperTheme.colors.onPrimary}
+        theme={paperTheme}
+      />
+    </UserLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   center: {
     justifyContent: "center",
     alignItems: "center",
@@ -214,5 +261,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontSize: 16,
     textAlign: "center",
+  },
+  fabStyle: {
+    position: "absolute",
+    margin: 16,
+    right: 0,
+    bottom: 0,
+    borderRadius: 28,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
 });
